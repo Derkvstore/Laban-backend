@@ -15,7 +15,8 @@ exports.getAllDettes = async (req, res) => {
         v.statut_paiement
       FROM ventes v
       JOIN clients c ON v.client_id = c.id
-      WHERE v.statut_paiement = 'en_attente' OR v.statut_paiement = 'paiement_partiel'
+      WHERE (v.statut_paiement = 'en_attente' OR v.statut_paiement = 'paiement_partiel')
+      AND (v.montant_total - v.montant_paye) > 0
       ORDER BY v.date_vente DESC
     `);
     res.status(200).json(dettes.rows);
@@ -40,6 +41,7 @@ exports.getDettesByClient = async (req, res) => {
       FROM ventes v
       WHERE v.client_id = $1
       AND (v.statut_paiement = 'en_attente' OR v.statut_paiement = 'paiement_partiel')
+      AND (v.montant_total - v.montant_paye) > 0
       ORDER BY v.date_vente DESC
     `, [clientId]);
     res.status(200).json(dettes.rows);
