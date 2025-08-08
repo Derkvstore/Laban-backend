@@ -83,20 +83,32 @@ exports.getDailyReport = async (req, res) => {
 // Contrôleur pour récupérer les totaux du tableau de bord
 exports.getDashboardTotals = async (req, res) => {
   try {
+    // Requête pour compter le nombre total de produits en stock de type 'CARTON'
     const cartonsResult = await pool.query(`
       SELECT SUM(quantite_en_stock) as total_stock
       FROM products
-      WHERE type_carton IS NOT NULL
+      WHERE type = 'CARTON' AND quantite_en_stock > 0
     `);
+    
+    // Requête pour compter le nombre total de produits en stock de type 'ARRIVAGE'
     const arrivagesResult = await pool.query(`
-      SELECT SUM(quantity_moved) as total_arrivages
-      FROM stock_movements
-      WHERE movement_type = 'entrée'
+      SELECT SUM(quantite_en_stock) as total_arrivages
+      FROM products
+      WHERE type = 'ARRIVAGE' AND quantite_en_stock > 0
     `);
+
+    // Requête pour compter le nombre total de produits en stock de type 'ACCESSOIRE'
+    const accessoiresResult = await pool.query(`
+      SELECT SUM(quantite_en_stock) as total_accessoires
+      FROM products
+      WHERE type = 'ACCESSOIRE' AND quantite_en_stock > 0
+    `);
+
     const retoursResult = await pool.query(`
       SELECT SUM(quantite_retournee) as total_retours
       FROM defective_returns
     `);
+    
     const mobilesVendusResult = await pool.query(`
       SELECT SUM(quantite_vendue) as total_vendus
       FROM vente_items
@@ -108,6 +120,7 @@ exports.getDashboardTotals = async (req, res) => {
       arrivages: parseInt(arrivagesResult.rows[0].total_arrivages, 10) || 0,
       retours: parseInt(retoursResult.rows[0].total_retours, 10) || 0,
       mobilesVendus: parseInt(mobilesVendusResult.rows[0].total_vendus, 10) || 0,
+      accessoires: parseInt(accessoiresResult.rows[0].total_accessoires, 10) || 0,
     });
   } catch (error) {
     console.error('Erreur lors de la récupération des totaux du tableau de bord:', error);
