@@ -79,3 +79,37 @@ exports.getDailyReport = async (req, res) => {
     res.status(500).json({ message: 'Erreur serveur interne' });
   }
 };
+
+// Contrôleur pour récupérer les totaux du tableau de bord
+exports.getDashboardTotals = async (req, res) => {
+  try {
+    const cartonsResult = await pool.query(`
+      SELECT SUM(quantite_en_stock) as total_stock
+      FROM products
+    `);
+    const arrivagesResult = await pool.query(`
+      SELECT SUM(quantity_moved) as total_arrivages
+      FROM stock_movements
+      WHERE movement_type = 'entrée'
+    `);
+    const retoursResult = await pool.query(`
+      SELECT SUM(quantite_retournee) as total_retours
+      FROM defective_returns
+    `);
+    const mobilesVendusResult = await pool.query(`
+      SELECT SUM(quantite_vendue) as total_vendus
+      FROM vente_items
+      WHERE statut_vente_item = 'vendu'
+    `);
+
+    res.status(200).json({
+      cartons: parseInt(cartonsResult.rows[0].total_stock, 10) || 0,
+      arrivages: parseInt(arrivagesResult.rows[0].total_arrivages, 10) || 0,
+      retours: parseInt(retoursResult.rows[0].total_retours, 10) || 0,
+      mobilesVendus: parseInt(mobilesVendusResult.rows[0].total_vendus, 10) || 0,
+    });
+  } catch (error) {
+    console.error('Erreur lors de la récupération des totaux du tableau de bord:', error);
+    res.status(500).json({ message: 'Erreur serveur interne' });
+  }
+};

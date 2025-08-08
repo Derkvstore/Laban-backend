@@ -1,4 +1,3 @@
-// Importe le pool de connexion à la base de données
 const pool = require('../db');
 
 // Contrôleur pour la création d'une nouvelle vente
@@ -82,7 +81,7 @@ exports.cancelVenteItem = async (req, res) => {
       return res.status(404).json({ message: 'Produit de la vente non trouvé ou déjà annulé' });
     }
 
-    const { product_id, quantite_vendue } = venteItem.rows[0];
+    const { product_id, quantite_vendue, prix_unitaire_negocie } = venteItem.rows[0];
     
     // Met à jour le statut du vente_item
     await pool.query('UPDATE vente_items SET statut_vente_item = $1, cancellation_reason = $2 WHERE id = $3', ['annulé', 'Annulation demandée par le client', vente_item_id]);
@@ -90,21 +89,28 @@ exports.cancelVenteItem = async (req, res) => {
     // Rétablit le stock du produit
     await pool.query('UPDATE products SET quantite_en_stock = quantite_en_stock + $1 WHERE id = $2', [quantite_vendue, product_id]);
 
-    // Recalcule le montant total de la vente
+    // Recalcule le montant total et le montant payé de la vente
     const venteId = venteItem.rows[0].vente_id;
-    const items = await pool.query('SELECT * FROM vente_items WHERE vente_id = $1 AND statut_vente_item = $2', [venteId, 'actif']);
-    let newTotalAmount = 0;
-    for (const item of items.rows) {
-      newTotalAmount += item.prix_unitaire_negocie * item.quantite_vendue;
+    const vente = await pool.query('SELECT * FROM ventes WHERE id = $1', [venteId]);
+    
+    const newTotalAmount = parseFloat(vente.rows[0].montant_total) - (parseFloat(prix_unitaire_negocie) * quantite_vendue);
+    let newPaidAmount = parseFloat(vente.rows[0].montant_paye);
+    
+    // S'assurer que le montant payé ne dépasse pas le nouveau montant total
+    if (newPaidAmount > newTotalAmount) {
+        newPaidAmount = newTotalAmount; // Ajuster le montant payé
     }
-    await pool.query('UPDATE ventes SET montant_total = $1 WHERE id = $2', [newTotalAmount, venteId]);
+    
+    const newStatus = newPaidAmount === newTotalAmount ? 'payé' : 'paiement_partiel';
+
+    await pool.query('UPDATE ventes SET montant_total = $1, montant_paye = $2, statut_paiement = $3 WHERE id = $4', [newTotalAmount, newPaidAmount, newStatus, venteId]);
 
     await pool.query('COMMIT');
     res.status(200).json({ message: 'Produit de la vente annulé avec succès' });
   } catch (error) {
     await pool.query('ROLLBACK');
     console.error('Erreur lors de l\'annulation du produit:', error.message);
-    res.status(500).json({ message: 'Erreur serveur interne' });
+    res.status(500).json({ message: error.message });
   }
 };
 
@@ -113,6 +119,7 @@ exports.makePayment = async (req, res) => {
   const { vente_id, montant_paye } = req.body;
 
   try {
+    await pool.query('BEGIN');
     const vente = await pool.query('SELECT * FROM ventes WHERE id = $1', [vente_id]);
 
     if (vente.rows.length === 0) {
@@ -124,6 +131,7 @@ exports.makePayment = async (req, res) => {
 
     // Vérifie que le paiement ne dépasse pas le montant total
     if (newPaidAmount > currentVente.montant_total) {
+      await pool.query('ROLLBACK');
       return res.status(400).json({ message: 'Le montant payé dépasse le montant total de la vente' });
     }
 
@@ -136,9 +144,19 @@ exports.makePayment = async (req, res) => {
       [newPaidAmount, newStatus, vente_id]
     );
 
+    // Met à jour le statut des articles de vente
+    if (newStatus === 'payé') {
+      await pool.query(
+        'UPDATE vente_items SET statut_vente_item = $1 WHERE vente_id = $2',
+        ['vendu', vente_id]
+      );
+    }
+    
+    await pool.query('COMMIT');
     res.status(200).json({ message: 'Paiement effectué avec succès', vente: updatedVente.rows[0] });
 
   } catch (error) {
+    await pool.query('ROLLBACK');
     console.error('Erreur lors du paiement de la vente:', error);
     res.status(500).json({ message: 'Erreur serveur interne' });
   }
@@ -156,10 +174,10 @@ exports.returnDefectiveProduct = async (req, res) => {
       return res.status(404).json({ message: 'Produit de la vente non trouvé' });
     }
 
-    const { product_id, vente_id } = venteItem.rows[0];
+    const { product_id, vente_id, prix_unitaire_negocie } = venteItem.rows[0];
     
     // Insère le retour dans la table "defective_returns"
-    const newReturn = await pool.query(
+    await pool.query(
       'INSERT INTO defective_returns (product_id, quantite_retournee, reason) VALUES ($1, $2, $3) RETURNING *',
       [product_id, quantite_retournee, reason]
     );
@@ -172,8 +190,18 @@ exports.returnDefectiveProduct = async (req, res) => {
 
     // Diminue le montant total de la vente
     const vente = await pool.query('SELECT * FROM ventes WHERE id = $1', [vente_id]);
-    const updatedVenteAmount = parseFloat(vente.rows[0].montant_total) - (venteItem.rows[0].prix_unitaire_negocie * quantite_retournee);
-    await pool.query('UPDATE ventes SET montant_total = $1 WHERE id = $2', [updatedVenteAmount, vente_id]);
+    const updatedVenteAmount = parseFloat(vente.rows[0].montant_total) - (parseFloat(prix_unitaire_negocie) * quantite_retournee);
+    let updatedMontantPaye = parseFloat(vente.rows[0].montant_paye) - (parseFloat(prix_unitaire_negocie) * quantite_retournee);
+    
+    // S'assurer que le montant payé ne devient pas négatif
+    if (updatedMontantPaye < 0) {
+        updatedMontantPaye = 0; // Le montant payé ne peut pas être inférieur à 0
+    }
+
+    const newStatus = updatedMontantPaye === updatedVenteAmount ? 'payé' : 'paiement_partiel';
+    
+    // Mettre à jour la vente
+    await pool.query('UPDATE ventes SET montant_total = $1, montant_paye = $2, statut_paiement = $3 WHERE id = $4', [updatedVenteAmount, updatedMontantPaye, newStatus, vente_id]);
 
     await pool.query('COMMIT');
     res.status(201).json({ message: 'Retour de produit défectueux enregistré', retour: newReturn.rows[0] });
