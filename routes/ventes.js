@@ -6,6 +6,9 @@ const ventesController = require('../controllers/ventes.controller');
 // Toutes les routes définies ci-dessous utiliseront le middleware d'authentification.
 router.use(authMiddleware);
 
+// Nouvelle route GET pour récupérer toutes les ventes
+router.get('/', ventesController.getAllVentes);
+
 // Route POST pour créer une nouvelle vente
 router.post('/', ventesController.createVente);
 

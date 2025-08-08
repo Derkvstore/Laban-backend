@@ -59,6 +59,17 @@ exports.createVente = async (req, res) => {
   }
 };
 
+// Nouvelle fonction pour récupérer toutes les ventes
+exports.getAllVentes = async (req, res) => {
+  try {
+    const allVentes = await pool.query('SELECT * FROM ventes ORDER BY date_vente DESC');
+    res.status(200).json(allVentes.rows);
+  } catch (error) {
+    console.error('Erreur lors de la récupération des ventes:', error);
+    res.status(500).json({ message: 'Erreur serveur interne' });
+  }
+};
+
 // Contrôleur pour annuler un produit d'une vente (détail)
 exports.cancelVenteItem = async (req, res) => {
   const { vente_item_id } = req.body;
