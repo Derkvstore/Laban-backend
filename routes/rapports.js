@@ -7,7 +7,9 @@ const rapportsController = require('../controllers/rapports.controller');
 router.use(authMiddleware);
 
 // Route GET pour générer un rapport de la journée
-// Un paramètre de requête `?date=YYYY-MM-DD` peut être utilisé pour choisir une date spécifique
 router.get('/daily', rapportsController.getDailyReport);
+
+// Nouvelle route GET pour récupérer les totaux du tableau de bord
+router.get('/totals', rapportsController.getDashboardTotals);
 
 module.exports = router;

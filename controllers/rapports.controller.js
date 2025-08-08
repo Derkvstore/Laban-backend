@@ -59,7 +59,7 @@ exports.getDailyReport = async (req, res) => {
       FROM vente_items vi
       JOIN ventes v ON vi.vente_id = v.id
       WHERE DATE(v.date_vente) = $1
-      AND vi.statut_vente_item = 'actif'
+      AND vi.statut_vente_item = 'vendu'
     `, [targetDate]);
     
     const { total_ventes, total_achats } = beneficeResult.rows[0];
@@ -86,6 +86,7 @@ exports.getDashboardTotals = async (req, res) => {
     const cartonsResult = await pool.query(`
       SELECT SUM(quantite_en_stock) as total_stock
       FROM products
+      WHERE type_carton IS NOT NULL
     `);
     const arrivagesResult = await pool.query(`
       SELECT SUM(quantity_moved) as total_arrivages
