@@ -21,7 +21,7 @@ exports.createFournisseur = async (req, res) => {
 // Contrôleur pour récupérer tous les fournisseurs
 exports.getAllFournisseurs = async (req, res) => {
   try {
-    const allFournisseurs = await pool.query('SELECT * FROM fournisseurs ORDER BY date_ajout DESC');
+    const allFournisseurs = await pool.query('SELECT * FROM fournisseurs ORDER BY nom ASC');
     res.status(200).json(allFournisseurs.rows);
   } catch (error) {
     console.error('Erreur lors de la récupération des fournisseurs:', error);

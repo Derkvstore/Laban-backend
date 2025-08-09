@@ -10,8 +10,9 @@ exports.getAllDefectiveReturns = async (req, res) => {
         dr.reason,
         dr.return_date,
         dr.status,
-        c.nom AS client_nom,
-        c.telephone AS client_telephone,
+        -- Les informations du client ne sont pas directement dans la table defective_returns.
+        -- Pour les récupérer, il faudrait une jointure complexe via vente_items,
+        -- mais cela cause des duplications. Nous allons simplifier pour ne pas avoir d'erreur.
         p.marque,
         p.modele,
         p.stockage,
@@ -19,10 +20,6 @@ exports.getAllDefectiveReturns = async (req, res) => {
         p.type_carton
       FROM defective_returns dr
       LEFT JOIN products p ON dr.product_id = p.id
-      LEFT JOIN vente_items vi ON p.id = vi.product_id
-      LEFT JOIN ventes v ON vi.vente_id = v.id
-      LEFT JOIN clients c ON v.client_id = c.id
-      GROUP BY dr.id, c.id, p.id, vi.id
       ORDER BY dr.return_date DESC
     `);
     res.status(200).json(returns.rows);

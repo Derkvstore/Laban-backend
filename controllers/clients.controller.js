@@ -21,7 +21,7 @@ exports.createClient = async (req, res) => {
 // Contrôleur pour récupérer tous les clients
 exports.getAllClients = async (req, res) => {
   try {
-    const allClients = await pool.query('SELECT * FROM clients ORDER BY created_at DESC');
+    const allClients = await pool.query('SELECT * FROM clients ORDER BY nom ASC');
     res.status(200).json(allClients.rows);
   } catch (error) {
     console.error('Erreur lors de la récupération des clients:', error);
