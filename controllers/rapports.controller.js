@@ -4,6 +4,9 @@ const pool = require('../db');
 exports.getDailyReport = async (req, res) => {
   const { date } = req.query; // Date au format 'YYYY-MM-DD'
   const targetDate = date ? date : new Date().toISOString().slice(0, 10);
+  const yesterday = new Date(targetDate);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const yesterdayDate = yesterday.toISOString().slice(0, 10);
   
   try {
     // Rapport des ventes de la journée
@@ -65,11 +68,61 @@ exports.getDailyReport = async (req, res) => {
     const { total_ventes, total_achats } = beneficeResult.rows[0];
     const beneficeBrut = (parseFloat(total_ventes) || 0) - (parseFloat(total_achats) || 0);
 
+    // Nouvelles requêtes pour les mouvements de stock journaliers
+    const mouvementsDuJour = {
+      cartons: { stockHier: 0, ajouteToday: 0, venduToday: 0, retourneToday: 0, renduToday: 0 },
+      arrivages: { stockHier: 0, ajouteToday: 0, venduToday: 0, retourneToday: 0, renduToday: 0 },
+      accessoires: { stockHier: 0, ajouteToday: 0, venduToday: 0, retourneToday: 0, renduToday: 0 },
+    };
+
+    // Calculer les mouvements du jour
+    const todayMovements = await pool.query(`
+      SELECT
+        p.type,
+        sm.movement_type,
+        SUM(sm.quantity_moved) as total
+      FROM stock_movements sm
+      JOIN products p ON sm.product_id = p.id
+      WHERE DATE(sm.movement_date) = $1
+      GROUP BY p.type, sm.movement_type
+    `, [targetDate]);
+
+    // Calculer le stock d'hier
+    const yesterdayStock = await pool.query(`
+      SELECT
+        p.type,
+        SUM(p.quantite_en_stock) as total_stock_hier
+      FROM products p
+      GROUP BY p.type
+    `);
+    
+    for (const row of yesterdayStock.rows) {
+      if (mouvementsDuJour[row.type.toLowerCase()]) {
+        mouvementsDuJour[row.type.toLowerCase()].stockHier = parseInt(row.total_stock_hier, 10) || 0;
+      }
+    }
+
+    for (const row of todayMovements.rows) {
+      const type = row.type.toLowerCase();
+      if (mouvementsDuJour[type]) {
+        if (row.movement_type === 'entrée') {
+          mouvementsDuJour[type].ajouteToday = parseInt(row.total, 10);
+        } else if (row.movement_type === 'sortie') {
+          mouvementsDuJour[type].venduToday = parseInt(row.total, 10);
+        } else if (row.movement_type === 'retour') {
+          mouvementsDuJour[type].retourneToday = parseInt(row.total, 10);
+        } else if (row.movement_type === 'rendu') {
+          mouvementsDuJour[type].renduToday = parseInt(row.total, 10);
+        }
+      }
+    }
+
     res.status(200).json({
       date: targetDate,
       ventes: ventes.rows,
       stock_movements: stockMovements.rows,
       defective_returns: defectiveReturns.rows,
+      mouvements_du_jour: mouvementsDuJour,
       benefice_brut: beneficeBrut,
       total_ventes: parseFloat(total_ventes) || 0
     });
