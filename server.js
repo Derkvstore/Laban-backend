@@ -28,8 +28,14 @@ const app = express();
 
 // Middleware pour analyser les requêtes JSON
 app.use(express.json());
+
 // Middleware CORS pour autoriser les requêtes du frontend
-app.use(cors());
+// L'origine autorisée doit correspondre à l'URL de votre site Vercel
+const corsOptions = {
+  origin: 'https://wassolo-app.vercel.app',
+  optionsSuccessStatus: 200 // Pour les navigateurs plus anciens
+};
+app.use(cors(corsOptions));
 
 // Affiche un message de connexion à la base de données
 pool.query('SELECT NOW()', (err, result) => {
