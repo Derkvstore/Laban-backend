@@ -18,6 +18,8 @@ const dettesRoutes = require('./routes/dettes');
 const defectiveReturnsRoutes = require('./routes/defective_returns');
 const rapportsRoutes = require('./routes/rapports');
 const specialOrdersRoutes = require('./routes/special_orders');
+const referencesProduitsRoutes = require('./routes/references_produits');
+
 
 
 // Charge les variables d'environnement depuis le fichier .env
@@ -89,6 +91,10 @@ app.use('/api/rapports', rapportsRoutes);
 
 // Utilise les routes pour les commandes spéciales
 app.use('/api/special_orders', specialOrdersRoutes);
+
+// Utilise les routes pour creer un nouvelle marque et modele
+app.use('/api/references_produits', referencesProduitsRoutes);
+
 
 
 // Démarre le serveur
