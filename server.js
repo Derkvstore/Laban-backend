@@ -35,9 +35,10 @@ app.use(express.json());
 
 // Middleware CORS pour autoriser les requêtes du frontend
 // L'origine autorisée doit correspondre à l'URL de votre site Vercel
+const isProduction = process.env.NODE_ENV === 'production';
 const corsOptions = {
-  origin: 'https://wassolo-app.vercel.app',
-  optionsSuccessStatus: 200 // Pour les navigateurs plus anciens
+  origin: isProduction ? 'https://wassolo-app.vercel.app' : '*',
+  optionsSuccessStatus: 200
 };
 app.use(cors(corsOptions));
 
