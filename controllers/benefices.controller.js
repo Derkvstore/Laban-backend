@@ -6,32 +6,36 @@ exports.getBenefices = async (req, res) => {
   const { startDate, endDate, date } = req.query;
 
   try {
-    const where = [];
+    const clauses = [];
     const params = [];
 
-    // 1) Uniquement les items réellement VENDUS (donc payés)
-    where.push(`vi.statut_vente_item = 'vendu'`);
-    // sécurité complémentaire : vente marquée payée
-    where.push(`v.statut_paiement = 'payé'`);
+    // ⚠️ Règle de base : on ne compte que les ventes réellement soldées
+    // (même si le champ statut_paiement n'a pas été mis à jour)
+    clauses.push(`v.montant_paye >= v.montant_total`);
+    clauses.push(`v.montant_total > 0`);
 
-    // 2) Filtres de date
+    // Exclure les lignes annulées / retournées / remplacées
+    // (dans ta BD on voit surtout 'annulé' et 'retourné'; on couvre aussi 'remplacé' si jamais)
+    clauses.push(`vi.statut_vente_item NOT IN ('annulé','retourné','remplacé')`);
+
+    // Filtres de date (sur date_vente)
     if (date) {
       params.push(date);
-      where.push(`DATE(v.date_vente) = $${params.length}::date`);
+      clauses.push(`DATE(v.date_vente) = $${params.length}::date`);
     } else {
       if (startDate) {
         params.push(startDate);
-        where.push(`v.date_vente >= $${params.length}::timestamp`);
+        clauses.push(`v.date_vente >= $${params.length}::timestamp`);
       }
       if (endDate) {
         params.push(endDate);
-        where.push(`v.date_vente < ($${params.length}::timestamp + INTERVAL '1 day')`);
+        clauses.push(`v.date_vente < ($${params.length}::timestamp + INTERVAL '1 day')`);
       }
     }
 
-    const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+    const whereSql = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
 
-    // Totaux
+    // Agrégats globaux
     const totalsSql = `
       SELECT
         COALESCE(SUM(vi.quantite_vendue * vi.prix_unitaire_negocie), 0) AS total_ventes,
@@ -41,7 +45,7 @@ exports.getBenefices = async (req, res) => {
       ${whereSql}
     `;
 
-    // Détail des lignes "vendu"
+    // Détail des lignes vendues (éligibles)
     const itemsSql = `
       SELECT
         vi.id AS vente_item_id,
