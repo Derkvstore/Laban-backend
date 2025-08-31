@@ -14,7 +14,7 @@ exports.createVente = async (req, res) => {
   try {
     await pool.query('BEGIN');
 
-    // Calcule le montant total de la vente
+    // Calcule le montant total
     for (const item of vente_items) {
       const product = await pool.query('SELECT * FROM products WHERE id = $1', [item.product_id]);
       if (product.rows.length === 0 || product.rows[0].quantite_en_stock < item.quantite_vendue) {
@@ -31,16 +31,25 @@ exports.createVente = async (req, res) => {
 
     const venteId = newSale.rows[0].id;
 
-    // Insère les items et décrémente le stock
+    // Insère les items, décrémente le stock et LOG le mouvement "sortie"
     for (const item of vente_items) {
       const product = await pool.query('SELECT * FROM products WHERE id = $1', [item.product_id]);
+
       await pool.query(
-        'INSERT INTO vente_items (vente_id, product_id, quantite_vendue, prix_unitaire_negocie, prix_unitaire_achat_au_moment_vente, marque, modele, stockage, type, type_carton) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *',
+        'INSERT INTO vente_items (vente_id, product_id, quantite_vendue, prix_unitaire_negocie, prix_unitaire_achat_au_moment_vente, marque, modele, stockage, type, type_carton) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)',
         [venteId, item.product_id, item.quantite_vendue, item.prix_unitaire_negocie, product.rows[0].prix_achat, product.rows[0].marque, product.rows[0].modele, product.rows[0].stockage, product.rows[0].type, product.rows[0].type_carton]
       );
+
       await pool.query(
         'UPDATE products SET quantite_en_stock = quantite_en_stock - $1 WHERE id = $2',
         [item.quantite_vendue, item.product_id]
+      );
+
+      // ✅ mouvement de stock : SORTIE (vente)
+      await pool.query(
+        `INSERT INTO stock_movements (product_id, movement_type, quantity_moved, reason, related_entity_id, related_entity_type)
+         VALUES ($1,$2,$3,$4,$5,$6)`,
+        [item.product_id, 'sortie', item.quantite_vendue, 'vente', venteId, 'vente']
       );
     }
 
@@ -72,7 +81,7 @@ exports.cancelVenteItem = async (req, res) => {
   try {
     await pool.query('BEGIN');
 
-    // ⬇️ Autoriser l'annulation si l'item est 'actif' OU 'vendu'
+    // Autoriser l'annulation si l'item est 'actif' OU 'vendu'
     const venteItem = await pool.query(
       `SELECT * FROM vente_items 
        WHERE id = $1 AND statut_vente_item IN ('actif','vendu')`,
@@ -98,15 +107,22 @@ exports.cancelVenteItem = async (req, res) => {
       [quantite_vendue, product_id]
     );
 
-    // Recalcule montant_total / montant_paye / statut_paiement
+    // ✅ mouvement de stock : ENTREE (annulation)
+    await pool.query(
+      `INSERT INTO stock_movements (product_id, movement_type, quantity_moved, reason, related_entity_id, related_entity_type)
+       VALUES ($1,$2,$3,$4,$5,$6)`,
+      [product_id, 'entrée', quantite_vendue, 'annulation', vente_item_id, 'vente_item']
+    );
+
+    // Recalcule la vente
     const vente = await pool.query('SELECT * FROM ventes WHERE id = $1', [vente_id]);
+
     let newTotalAmount = parseFloat(vente.rows[0].montant_total) - (parseFloat(prix_unitaire_negocie) * quantite_vendue);
     if (newTotalAmount < 0) newTotalAmount = 0;
 
     let newPaidAmount = parseFloat(vente.rows[0].montant_paye);
     if (newPaidAmount > newTotalAmount) newPaidAmount = newTotalAmount;
 
-    // Si tous les items sont annulés/retournés => statut 'annulé'
     const items = await pool.query('SELECT statut_vente_item FROM vente_items WHERE vente_id = $1', [vente_id]);
     const tousClotures = items.rows.length > 0 && items.rows.every(i => i.statut_vente_item === 'annulé' || i.statut_vente_item === 'retourné');
 
@@ -131,7 +147,7 @@ exports.cancelVenteItem = async (req, res) => {
   }
 };
 
-// Contrôleur pour effectuer un paiement partiel ou total pour une vente
+// Contrôleur pour effectuer un paiement
 exports.makePayment = async (req, res) => {
   const { vente_id, montant_paye } = req.body;
 
@@ -163,7 +179,6 @@ exports.makePayment = async (req, res) => {
       [newPaidAmount, newStatus, vente_id]
     );
 
-    // Ne passe "vendu" que les items encore "actif"
     if (newStatus === 'payé') {
       await pool.query(
         'UPDATE vente_items SET statut_vente_item = $1 WHERE vente_id = $2 AND statut_vente_item = $3',
@@ -209,6 +224,13 @@ exports.returnDefectiveProduct = async (req, res) => {
     await pool.query(
       'UPDATE vente_items SET statut_vente_item = $1 WHERE id = $2',
       ['retourné', vente_item_id]
+    );
+
+    // ✅ mouvement de stock : RETOUR (défectueux)
+    await pool.query(
+      `INSERT INTO stock_movements (product_id, movement_type, quantity_moved, reason, related_entity_id, related_entity_type)
+       VALUES ($1,$2,$3,$4,$5,$6)`,
+      [product_id, 'retour', quantite_retournee, 'défectueux', vente_item_id, 'vente_item']
     );
 
     const vente = await pool.query('SELECT * FROM ventes WHERE id = $1', [vente_id]);
