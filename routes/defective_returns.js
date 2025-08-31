@@ -3,10 +3,10 @@ const router = express.Router();
 const authMiddleware = require('../middleware/auth.middleware');
 const defectiveReturnsController = require('../controllers/defective_returns.controller');
 
-// Toutes les routes pour les retours défectueux sont protégées
+// Toutes les routes ci-dessous sont protégées
 router.use(authMiddleware);
 
-// Route GET pour récupérer tous les retours défectueux
+// GET /api/returns  → liste des retours (alias principal attendu par le frontend)
 router.get('/', defectiveReturnsController.getAllDefectiveReturns);
 
 module.exports = router;

@@ -15,14 +15,11 @@ const stockMovementsRoutes = require('./routes/stock_movements');
 const venteItemsRoutes = require('./routes/vente_items');
 const beneficesRoutes = require('./routes/benefices');
 const dettesRoutes = require('./routes/dettes');
-const defectiveReturnsRoutes = require('./routes/defective_returns');
+const defectiveReturnsRoutes = require('./routes/defective_returns'); // contrôleur des retours défectueux
 const rapportsRoutes = require('./routes/rapports');
 const specialOrdersRoutes = require('./routes/special_orders');
 const referencesProduitsRoutes = require('./routes/references_produits');
 const retoursFournisseursRoutes = require('./routes/retours_fournisseurs');
-
-
-
 
 // Charge les variables d'environnement depuis le fichier .env
 dotenv.config();
@@ -34,7 +31,6 @@ const app = express();
 app.use(express.json());
 
 // Middleware CORS pour autoriser les requêtes du frontend
-// L'origine autorisée doit correspondre à l'URL de votre site Vercel
 const isProduction = process.env.NODE_ENV === 'production';
 const corsOptions = {
   origin: isProduction ? 'https://wassolo-app.vercel.app' : '*',
@@ -45,7 +41,6 @@ app.use(cors(corsOptions));
 // Affiche un message de connexion à la base de données
 pool.query('SELECT NOW()', (err, result) => {
   if (err) {
-    // Affiche une erreur si la connexion échoue
     return console.error('Erreur de connexion à la base de données', err.stack);
   }
   console.log('✅ Connexion à la base de données réussie :', result.rows[0].now);
@@ -56,51 +51,42 @@ app.get('/', (req, res) => {
   res.send('API Laban Service démarrée !');
 });
 
-// Utilise les routes d'authentification
+// ==== Routes API ====
 app.use('/api/auth', authRoutes);
-
-// Utilise les routes pour les clients
 app.use('/api/clients', clientsRoutes);
-
-// Utilise les routes pour les fournisseurs
 app.use('/api/fournisseurs', fournisseursRoutes);
-
-// Utilise les routes pour les produits
 app.use('/api/products', productsRoutes);
-
-// Utilise les routes pour les ventes
 app.use('/api/ventes', ventesRoutes);
-
-// Utilise les routes pour les factures
 app.use('/api/factures', facturesRoutes);
-
-// Utilise les routes pour les mouvements de stock
 app.use('/api/stock_movements', stockMovementsRoutes);
-
-// Utilise les routes pour les articles de vente
 app.use('/api/vente_items', venteItemsRoutes);
-
-// Utilise les routes pour les bénéfices
 app.use('/api/benefices', beneficesRoutes);
-
-// Utilise les routes pour les dettes
 app.use('/api/dettes', dettesRoutes);
 
-// Utilise les routes pour les retours défectueux
-app.use('/api/defective_returns', defectiveReturnsRoutes);
+// Retours défectueux : on expose 3 alias pour compatibilité front
+app.use('/api/defective_returns', defectiveReturnsRoutes);   // underscore
+app.use('/api/defective-returns', defectiveReturnsRoutes);   // tiret
+app.use('/api/returns', defectiveReturnsRoutes);             // court (appelé par ton front)
 
-// Utilise les routes pour les rapports
 app.use('/api/rapports', rapportsRoutes);
-
-// Utilise les routes pour les commandes spéciales
 app.use('/api/special_orders', specialOrdersRoutes);
-
-// Utilise les routes pour creer un nouvelle marque et modele
 app.use('/api/references_produits', referencesProduitsRoutes);
 
-// Utilise les routes pour les remplaçant fournisseur
+// Retours vers fournisseurs : 2 alias (tiret + underscore)
 app.use('/api/retours-fournisseurs', retoursFournisseursRoutes);
+app.use('/api/retours_fournisseurs', retoursFournisseursRoutes);
 
+// ==== Gestion des erreurs JSON propres ====
+// 404 JSON (évite les pages HTML qui cassent le parsing côté front)
+app.use((req, res) => {
+  res.status(404).json({ message: 'Route introuvable', path: req.originalUrl });
+});
+
+// 500 JSON (filet de sécurité)
+app.use((err, req, res, next) => {
+  console.error('Erreur non interceptée :', err);
+  res.status(500).json({ message: 'Erreur serveur interne' });
+});
 
 // Démarre le serveur
 const PORT = process.env.PORT || 3000;

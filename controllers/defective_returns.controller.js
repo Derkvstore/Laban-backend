@@ -10,7 +10,7 @@ exports.getAllDefectiveReturns = async (req, res) => {
         dr.reason,
         dr.return_date,
         dr.status,
-        c.id AS client_id,            -- ⬅️ ajouté pour Retours.jsx
+        c.id AS client_id,
         c.nom AS client_nom,
         c.telephone AS client_telephone,
         p.marque,
@@ -20,8 +20,6 @@ exports.getAllDefectiveReturns = async (req, res) => {
         p.type_carton
       FROM defective_returns dr
       LEFT JOIN products p ON p.id = dr.product_id
-
-      -- ⬇️ on choisit un seul vente_items lié au product_id (le plus récent)
       LEFT JOIN LATERAL (
         SELECT vi.*
         FROM vente_items vi
@@ -29,10 +27,8 @@ exports.getAllDefectiveReturns = async (req, res) => {
         ORDER BY vi.id DESC
         LIMIT 1
       ) vi ON TRUE
-
-      LEFT JOIN ventes v   ON v.id = vi.vente_id
-      LEFT JOIN clients c  ON c.id = v.client_id
-
+      LEFT JOIN ventes v  ON v.id = vi.vente_id
+      LEFT JOIN clients c ON c.id = v.client_id
       ORDER BY dr.return_date DESC
     `);
 
