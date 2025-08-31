@@ -19,6 +19,8 @@ const defectiveReturnsRoutes = require('./routes/defective_returns');
 const rapportsRoutes = require('./routes/rapports');
 const specialOrdersRoutes = require('./routes/special_orders');
 const referencesProduitsRoutes = require('./routes/references_produits');
+const retoursFournisseursRoutes = require('./routes/retours_fournisseurs');
+
 
 
 
@@ -95,6 +97,8 @@ app.use('/api/special_orders', specialOrdersRoutes);
 // Utilise les routes pour creer un nouvelle marque et modele
 app.use('/api/references_produits', referencesProduitsRoutes);
 
+// Utilise les routes pour les remplaçant fournisseur
+app.use('/api/retours-fournisseurs', retoursFournisseursRoutes);
 
 
 // Démarre le serveur
