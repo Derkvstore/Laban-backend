@@ -11,12 +11,11 @@ exports.getBenefices = async (req, res) => {
 
     // 1) Uniquement les items réellement VENDUS (donc payés)
     where.push(`vi.statut_vente_item = 'vendu'`);
-    // Optionnel: sécurité supplémentaire si tu veux t'assurer que la vente est marquée payée
+    // sécurité complémentaire : vente marquée payée
     where.push(`v.statut_paiement = 'payé'`);
 
     // 2) Filtres de date
     if (date) {
-      // Filtre sur le jour exact (peu importe l'heure)
       params.push(date);
       where.push(`DATE(v.date_vente) = $${params.length}::date`);
     } else {
@@ -25,7 +24,6 @@ exports.getBenefices = async (req, res) => {
         where.push(`v.date_vente >= $${params.length}::timestamp`);
       }
       if (endDate) {
-        // EndDate inclus (jusqu'à 23:59:59)
         params.push(endDate);
         where.push(`v.date_vente < ($${params.length}::timestamp + INTERVAL '1 day')`);
       }
@@ -33,7 +31,7 @@ exports.getBenefices = async (req, res) => {
 
     const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
 
-    // 3) Totaux
+    // Totaux
     const totalsSql = `
       SELECT
         COALESCE(SUM(vi.quantite_vendue * vi.prix_unitaire_negocie), 0) AS total_ventes,
@@ -43,7 +41,7 @@ exports.getBenefices = async (req, res) => {
       ${whereSql}
     `;
 
-    // 4) Détail par ligne vendue (pour l’affichage du tableau)
+    // Détail des lignes "vendu"
     const itemsSql = `
       SELECT
         vi.id AS vente_item_id,
@@ -86,8 +84,8 @@ exports.getBenefices = async (req, res) => {
       total_ventes,
       total_achats,
       benefice_brut,
-      total_benefice_global: benefice_brut, // alias pratique côté front
-      sold_items: itemsRes.rows,            // lignes détaillées uniquement "vendu"
+      total_benefice_global: benefice_brut,
+      sold_items: itemsRes.rows,
     });
   } catch (error) {
     console.error('Erreur lors du calcul des bénéfices:', error);
