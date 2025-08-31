@@ -1,21 +1,18 @@
 const express = require('express');
 const router = express.Router();
 const authMiddleware = require('../middleware/auth.middleware');
-const ctrl = require('../controllers/retours_fournisseurs.controller');
+const retoursFournisseursController = require('../controllers/retours_fournisseurs.controller');
 
 // Toutes les routes sont protégées
 router.use(authMiddleware);
 
-// Créer un ou plusieurs retours fournisseur
-router.post('/', ctrl.creerRetourFournisseur);
+// Petit ping pour vérifier que la route est bien montée
+router.get('/_ping', (req, res) => res.json({ ok: true }));
 
-// Lister / chercher
-router.get('/', ctrl.listerRetoursFournisseurs);
+// ✅ Envoi d’un lot de retours défectueux au fournisseur
+router.post('/', retoursFournisseursController.creerEnvoiFournisseur);
 
-// Lire un retour fournisseur
-router.get('/:id', ctrl.lireRetourFournisseur);
-
-// Mettre à jour le statut (reception, remplacement, avoir, etc.)
-router.put('/:id/statut', ctrl.mettreAJourStatutRetourFournisseur);
+// ✅ Listing simple des retours déjà envoyés au fournisseur (statut)
+router.get('/', retoursFournisseursController.listerEnvoisFournisseur);
 
 module.exports = router;
