@@ -3,13 +3,16 @@ const router = express.Router();
 const authMiddleware = require('../middleware/auth.middleware');
 const rapportsController = require('../controllers/rapports.controller');
 
-// Toutes les routes pour les rapports sont protégées
+// Toutes les routes ci-dessous sont protégées
 router.use(authMiddleware);
 
-// Route GET pour générer un rapport de la journée
+// Rapport “cartes + inventaire”
 router.get('/daily', rapportsController.getDailyReport);
 
-// Nouvelle route GET pour récupérer les totaux du tableau de bord
+// Totaux dashboard
 router.get('/totals', rapportsController.getDashboardTotals);
+
+// ✅ NOUVEAU : Rapport journalier par produit (table détaillée)
+router.get('/rapport-journalier-produits', rapportsController.getRapportJournalierProduits);
 
 module.exports = router;
