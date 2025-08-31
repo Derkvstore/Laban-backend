@@ -12,7 +12,6 @@ exports.createVente = async (req, res) => {
   let totalAmount = 0;
 
   try {
-    // Démarre une transaction pour s'assurer que toutes les opérations réussissent ou échouent ensemble
     await pool.query('BEGIN');
 
     // Calcule le montant total de la vente
@@ -24,34 +23,31 @@ exports.createVente = async (req, res) => {
       totalAmount += item.prix_unitaire_negocie * item.quantite_vendue;
     }
 
-    // Crée la vente dans la table "ventes"
+    // Crée la vente
     const newSale = await pool.query(
       'INSERT INTO ventes (client_id, montant_total, montant_paye) VALUES ($1, $2, $3) RETURNING *',
-      [client_id, totalAmount, 0] // Paiement initial à 0, le statut sera "en_attente"
+      [client_id, totalAmount, 0]
     );
 
     const venteId = newSale.rows[0].id;
 
-    // Insère chaque produit vendu dans la table "vente_items" et met à jour le stock
+    // Insère les items et décrémente le stock
     for (const item of vente_items) {
       const product = await pool.query('SELECT * FROM products WHERE id = $1', [item.product_id]);
       await pool.query(
         'INSERT INTO vente_items (vente_id, product_id, quantite_vendue, prix_unitaire_negocie, prix_unitaire_achat_au_moment_vente, marque, modele, stockage, type, type_carton) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *',
         [venteId, item.product_id, item.quantite_vendue, item.prix_unitaire_negocie, product.rows[0].prix_achat, product.rows[0].marque, product.rows[0].modele, product.rows[0].stockage, product.rows[0].type, product.rows[0].type_carton]
       );
-      // Met à jour le stock en décrémentant la quantité
       await pool.query(
         'UPDATE products SET quantite_en_stock = quantite_en_stock - $1 WHERE id = $2',
         [item.quantite_vendue, item.product_id]
       );
     }
 
-    // Valide la transaction
     await pool.query('COMMIT');
     res.status(201).json({ message: 'Vente créée avec succès', vente: newSale.rows[0] });
 
   } catch (error) {
-    // En cas d'erreur, annule toutes les opérations
     await pool.query('ROLLBACK');
     console.error('Erreur lors de la création de la vente:', error.message);
     res.status(500).json({ message: error.message });
@@ -71,45 +67,64 @@ exports.getAllVentes = async (req, res) => {
 
 // Contrôleur pour annuler un produit d'une vente (détail)
 exports.cancelVenteItem = async (req, res) => {
-  const { vente_item_id } = req.body;
-  
+  const { vente_item_id, cancellation_reason } = req.body;
+
   try {
     await pool.query('BEGIN');
-    const venteItem = await pool.query('SELECT * FROM vente_items WHERE id = $1 AND statut_vente_item = $2', [vente_item_id, 'actif']);
-    
+
+    const venteItem = await pool.query(
+      'SELECT * FROM vente_items WHERE id = $1 AND statut_vente_item = $2',
+      [vente_item_id, 'actif']
+    );
+
     if (venteItem.rows.length === 0) {
+      await pool.query('ROLLBACK');
       return res.status(404).json({ message: 'Produit de la vente non trouvé ou déjà annulé' });
     }
 
-    const { product_id, quantite_vendue, prix_unitaire_negocie } = venteItem.rows[0];
-    
+    const { product_id, quantite_vendue, prix_unitaire_negocie, vente_id } = venteItem.rows[0];
+
     // Met à jour le statut du vente_item
-    await pool.query('UPDATE vente_items SET statut_vente_item = $1, cancellation_reason = $2 WHERE id = $3', ['annulé', 'Annulation demandée par le client', vente_item_id]);
+    await pool.query(
+      'UPDATE vente_items SET statut_vente_item = $1, cancellation_reason = $2 WHERE id = $3',
+      ['annulé', cancellation_reason || 'Annulation demandée par le client', vente_item_id]
+    );
 
     // Rétablit le stock du produit
-    await pool.query('UPDATE products SET quantite_en_stock = quantite_en_stock + $1 WHERE id = $2', [quantite_vendue, product_id]);
+    await pool.query(
+      'UPDATE products SET quantite_en_stock = quantite_en_stock + $1 WHERE id = $2',
+      [quantite_vendue, product_id]
+    );
 
-    // Recalcule le montant total et le montant payé de la vente
-    const venteId = venteItem.rows[0].vente_id;
-    const vente = await pool.query('SELECT * FROM ventes WHERE id = $1', [venteId]);
-    
-    const newTotalAmount = parseFloat(vente.rows[0].montant_total) - (parseFloat(prix_unitaire_negocie) * quantite_vendue);
+    // Recalcule total & payé
+    const vente = await pool.query('SELECT * FROM ventes WHERE id = $1', [vente_id]);
+    let newTotalAmount = parseFloat(vente.rows[0].montant_total) - (parseFloat(prix_unitaire_negocie) * quantite_vendue);
+    if (newTotalAmount < 0) newTotalAmount = 0;
+
     let newPaidAmount = parseFloat(vente.rows[0].montant_paye);
-    
-    // S'assurer que le montant payé ne dépasse pas le nouveau montant total
-    if (newPaidAmount > newTotalAmount) {
-        newPaidAmount = newTotalAmount; // Ajuster le montant payé
-    }
-    
-    const newStatus = newPaidAmount === newTotalAmount ? 'payé' : 'paiement_partiel';
+    if (newPaidAmount > newTotalAmount) newPaidAmount = newTotalAmount;
 
-    await pool.query('UPDATE ventes SET montant_total = $1, montant_paye = $2, statut_paiement = $3 WHERE id = $4', [newTotalAmount, newPaidAmount, newStatus, venteId]);
+    // Dérive le statut (annulé/partiel/payé/en_attente)
+    const items = await pool.query('SELECT statut_vente_item FROM vente_items WHERE vente_id = $1', [vente_id]);
+    const tousClotures = items.rows.length > 0 && items.rows.every(i => i.statut_vente_item === 'annulé' || i.statut_vente_item === 'retourné');
+
+    let newStatus;
+    if (tousClotures || newTotalAmount === 0) newStatus = 'annulé';
+    else if (newPaidAmount >= newTotalAmount) newStatus = 'payé';
+    else if (newPaidAmount > 0) newStatus = 'paiement_partiel';
+    else newStatus = 'en_attente';
+
+    await pool.query(
+      'UPDATE ventes SET montant_total = $1, montant_paye = $2, statut_paiement = $3 WHERE id = $4',
+      [newTotalAmount, newPaidAmount, newStatus, vente_id]
+    );
 
     await pool.query('COMMIT');
     res.status(200).json({ message: 'Produit de la vente annulé avec succès' });
+
   } catch (error) {
     await pool.query('ROLLBACK');
-    console.error('Erreur lors de l\'annulation du produit:', error.message);
+    console.error("Erreur lors de l'annulation du produit:", error.message);
     res.status(500).json({ message: error.message });
   }
 };
@@ -120,23 +135,28 @@ exports.makePayment = async (req, res) => {
 
   try {
     await pool.query('BEGIN');
-    const vente = await pool.query('SELECT * FROM ventes WHERE id = $1', [vente_id]);
 
+    const vente = await pool.query('SELECT * FROM ventes WHERE id = $1', [vente_id]);
     if (vente.rows.length === 0) {
+      await pool.query('ROLLBACK');
       return res.status(404).json({ message: 'Vente non trouvée' });
     }
 
     const currentVente = vente.rows[0];
     const newPaidAmount = parseFloat(currentVente.montant_paye) + parseFloat(montant_paye);
 
-    // Vérifie que le paiement ne dépasse pas le montant total
+    // Paiement ne doit pas dépasser le total
     if (newPaidAmount > currentVente.montant_total) {
       await pool.query('ROLLBACK');
       return res.status(400).json({ message: 'Le montant payé dépasse le montant total de la vente' });
     }
 
-    // Détermine le nouveau statut de paiement
-    const newStatus = newPaidAmount === currentVente.montant_total ? 'payé' : 'paiement_partiel';
+    // Détermine le nouveau statut
+    let newStatus;
+    if (currentVente.montant_total === 0) newStatus = 'annulé';
+    else if (newPaidAmount === currentVente.montant_total) newStatus = 'payé';
+    else if (newPaidAmount > 0) newStatus = 'paiement_partiel';
+    else newStatus = 'en_attente';
 
     // Met à jour la vente
     const updatedVente = await pool.query(
@@ -144,14 +164,14 @@ exports.makePayment = async (req, res) => {
       [newPaidAmount, newStatus, vente_id]
     );
 
-    // Met à jour le statut des articles de vente
+    // IMPORTANT : ne passe "vendu" que les items encore "actif" (ne pas toucher aux annulés/retournés)
     if (newStatus === 'payé') {
       await pool.query(
-        'UPDATE vente_items SET statut_vente_item = $1 WHERE vente_id = $2',
-        ['vendu', vente_id]
+        'UPDATE vente_items SET statut_vente_item = $1 WHERE vente_id = $2 AND statut_vente_item = $3',
+        ['vendu', vente_id, 'actif']
       );
     }
-    
+
     await pool.query('COMMIT');
     res.status(200).json({ message: 'Paiement effectué avec succès', vente: updatedVente.rows[0] });
 
@@ -168,47 +188,65 @@ exports.returnDefectiveProduct = async (req, res) => {
 
   try {
     await pool.query('BEGIN');
-    const venteItem = await pool.query('SELECT * FROM vente_items WHERE id = $1', [vente_item_id]);
 
+    const venteItem = await pool.query('SELECT * FROM vente_items WHERE id = $1', [vente_item_id]);
     if (venteItem.rows.length === 0) {
+      await pool.query('ROLLBACK');
       return res.status(404).json({ message: 'Produit de la vente non trouvé' });
     }
 
+    // Idempotence : si déjà retourné, ne rien refaire
+    if (venteItem.rows[0].statut_vente_item === 'retourné') {
+      await pool.query('ROLLBACK');
+      return res.status(200).json({ message: 'Produit déjà retourné' });
+    }
+
     const { product_id, vente_id, prix_unitaire_negocie } = venteItem.rows[0];
-    
-    // Insère le retour dans la table "defective_returns"
-    await pool.query(
+
+    // Enregistre le retour (<<< newReturn était manquant dans ton code et causait le 500)
+    const newReturn = await pool.query(
       'INSERT INTO defective_returns (product_id, quantite_retournee, reason) VALUES ($1, $2, $3) RETURNING *',
       [product_id, quantite_retournee, reason]
     );
 
-    // Met à jour le statut du vente_item pour refléter le retour
+    // Met à jour le statut de l'item
     await pool.query(
       'UPDATE vente_items SET statut_vente_item = $1 WHERE id = $2',
       ['retourné', vente_item_id]
     );
 
-    // Diminue le montant total de la vente
+    // Recalcule les montants
     const vente = await pool.query('SELECT * FROM ventes WHERE id = $1', [vente_id]);
-    const updatedVenteAmount = parseFloat(vente.rows[0].montant_total) - (parseFloat(prix_unitaire_negocie) * quantite_retournee);
-    let updatedMontantPaye = parseFloat(vente.rows[0].montant_paye) - (parseFloat(prix_unitaire_negocie) * quantite_retournee);
-    
-    // S'assurer que le montant payé ne devient pas négatif
-    if (updatedMontantPaye < 0) {
-        updatedMontantPaye = 0; // Le montant payé ne peut pas être inférieur à 0
-    }
 
-    const newStatus = updatedMontantPaye === updatedVenteAmount ? 'payé' : 'paiement_partiel';
-    
-    // Mettre à jour la vente
-    await pool.query('UPDATE ventes SET montant_total = $1, montant_paye = $2, statut_paiement = $3 WHERE id = $4', [updatedVenteAmount, updatedMontantPaye, newStatus, vente_id]);
+    let updatedVenteAmount = parseFloat(vente.rows[0].montant_total) - (parseFloat(prix_unitaire_negocie) * quantite_retournee);
+    if (updatedVenteAmount < 0) updatedVenteAmount = 0;
+
+    let updatedMontantPaye = parseFloat(vente.rows[0].montant_paye) - (parseFloat(prix_unitaire_negocie) * quantite_retournee);
+    if (updatedMontantPaye < 0) updatedMontantPaye = 0;
+    if (updatedMontantPaye > updatedVenteAmount) updatedMontantPaye = updatedVenteAmount;
+
+    // Statut dérivé
+    const items = await pool.query('SELECT statut_vente_item FROM vente_items WHERE vente_id = $1', [vente_id]);
+    const tousClotures = items.rows.length > 0 && items.rows.every(i => i.statut_vente_item === 'annulé' || i.statut_vente_item === 'retourné');
+
+    let newStatus;
+    if (tousClotures || updatedVenteAmount === 0) newStatus = 'annulé';
+    else if (updatedMontantPaye >= updatedVenteAmount) newStatus = 'payé';
+    else if (updatedMontantPaye > 0) newStatus = 'paiement_partiel';
+    else newStatus = 'en_attente';
+
+    // Met à jour la vente
+    await pool.query(
+      'UPDATE ventes SET montant_total = $1, montant_paye = $2, statut_paiement = $3 WHERE id = $4',
+      [updatedVenteAmount, updatedMontantPaye, newStatus, vente_id]
+    );
 
     await pool.query('COMMIT');
     res.status(201).json({ message: 'Retour de produit défectueux enregistré', retour: newReturn.rows[0] });
 
   } catch (error) {
     await pool.query('ROLLBACK');
-    console.error('Erreur lors de l\'enregistrement du retour:', error);
+    console.error("Erreur lors de l'enregistrement du retour:", error);
     res.status(500).json({ message: 'Erreur serveur interne' });
   }
 };
