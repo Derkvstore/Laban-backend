@@ -87,7 +87,7 @@ app.use('/api/benefices', beneficesRoutes);
 app.use('/api/dettes', dettesRoutes);
 
 // Utilise les routes pour les retours défectueux
-app.use('/api/defective_returns', defectiveReturnsRoutes);
+app.use('/api/returns', defectiveReturnsRoutes);
 
 // Utilise les routes pour les rapports
 app.use('/api/rapports', rapportsRoutes);
