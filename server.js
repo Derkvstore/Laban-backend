@@ -2,8 +2,10 @@
 const express = require('express');
 const dotenv = require('dotenv');
 const cors = require('cors');
+
 // Importe le pool de connexion à la base de données
 const pool = require('./db');
+
 // Importe les routes
 const authRoutes = require('./routes/auth.routes');
 const clientsRoutes = require('./routes/clients');
@@ -20,9 +22,6 @@ const rapportsRoutes = require('./routes/rapports');
 const specialOrdersRoutes = require('./routes/special_orders');
 const referencesProduitsRoutes = require('./routes/references_produits');
 const retoursFournisseursRoutes = require('./routes/retours_fournisseurs');
-
-
-
 
 // Charge les variables d'environnement depuis le fichier .env
 dotenv.config();
@@ -86,7 +85,8 @@ app.use('/api/benefices', beneficesRoutes);
 // Utilise les routes pour les dettes
 app.use('/api/dettes', dettesRoutes);
 
-// Utilise les routes pour les retours défectueux
+// Utilise les routes pour les retours défectueux.
+// J'ai corrigé le chemin en /api/returns pour correspondre à la route définie dans le fichier de routes.
 app.use('/api/returns', defectiveReturnsRoutes);
 
 // Utilise les routes pour les rapports
@@ -98,7 +98,7 @@ app.use('/api/special_orders', specialOrdersRoutes);
 // Utilise les routes pour creer un nouvelle marque et modele
 app.use('/api/references_produits', referencesProduitsRoutes);
 
-// Utilise les routes pour les remplaçant fournisseur
+// Utilise les routes pour les retours fournisseur
 app.use('/api/retours-fournisseurs', retoursFournisseursRoutes);
 
 
