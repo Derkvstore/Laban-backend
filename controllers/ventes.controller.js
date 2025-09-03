@@ -116,13 +116,18 @@ exports.cancelVenteItem = async (req, res) => {
 
     // Recalcule la vente
     const vente = await pool.query('SELECT * FROM ventes WHERE id = $1', [vente_id]);
+    const currentVente = vente.rows[0];
+    const itemTotal = parseFloat(prix_unitaire_negocie) * quantite_vendue;
 
-    let newTotalAmount = parseFloat(vente.rows[0].montant_total) - (parseFloat(prix_unitaire_negocie) * quantite_vendue);
+    let newTotalAmount = parseFloat(currentVente.montant_total) - itemTotal;
     if (newTotalAmount < 0) newTotalAmount = 0;
 
-    let newPaidAmount = parseFloat(vente.rows[0].montant_paye);
-    if (newPaidAmount > newTotalAmount) newPaidAmount = newTotalAmount;
-
+    // Le montant payé reste le même, à moins qu'il soit supérieur au nouveau total
+    let newPaidAmount = parseFloat(currentVente.montant_paye);
+    if (newPaidAmount > newTotalAmount) {
+      newPaidAmount = newTotalAmount; // Ajuste le montant payé si le total est maintenant plus petit
+    }
+    
     const items = await pool.query('SELECT statut_vente_item FROM vente_items WHERE vente_id = $1', [vente_id]);
     const tousClotures = items.rows.length > 0 && items.rows.every(i => i.statut_vente_item === 'annulé' || i.statut_vente_item === 'retourné');
 
@@ -215,6 +220,7 @@ exports.returnDefectiveProduct = async (req, res) => {
     }
 
     const { product_id, vente_id, prix_unitaire_negocie } = venteItem.rows[0];
+    const retourTotal = parseFloat(prix_unitaire_negocie) * quantite_retournee;
 
     const newReturn = await pool.query(
       'INSERT INTO defective_returns (product_id, quantite_retournee, reason) VALUES ($1, $2, $3) RETURNING *',
@@ -234,19 +240,22 @@ exports.returnDefectiveProduct = async (req, res) => {
     );
 
     const vente = await pool.query('SELECT * FROM ventes WHERE id = $1', [vente_id]);
+    const currentVente = vente.rows[0];
 
-    let updatedVenteAmount = parseFloat(vente.rows[0].montant_total) - (parseFloat(prix_unitaire_negocie) * quantite_retournee);
+    let updatedVenteAmount = parseFloat(currentVente.montant_total) - retourTotal;
     if (updatedVenteAmount < 0) updatedVenteAmount = 0;
-
-    let updatedMontantPaye = parseFloat(vente.rows[0].montant_paye) - (parseFloat(prix_unitaire_negocie) * quantite_retournee);
-    if (updatedMontantPaye < 0) updatedMontantPaye = 0;
-    if (updatedMontantPaye > updatedVenteAmount) updatedMontantPaye = updatedVenteAmount;
+    
+    // Le montant payé reste le même, à moins qu'il soit supérieur au nouveau total
+    let updatedMontantPaye = parseFloat(currentVente.montant_paye);
+    if (updatedMontantPaye > updatedVenteAmount) {
+      updatedMontantPaye = updatedVenteAmount; // Ajuste le montant payé si le total est maintenant plus petit
+    }
 
     const items = await pool.query('SELECT statut_vente_item FROM vente_items WHERE vente_id = $1', [vente_id]);
     const tousClotures = items.rows.length > 0 && items.rows.every(i => i.statut_vente_item === 'annulé' || i.statut_vente_item === 'retourné');
 
     let newStatus;
-    if (tousClotures || updatedVenteAmount === 0) newStatus = 'annulé';
+    if (tousClotures) newStatus = 'annulé';
     else if (updatedMontantPaye >= updatedVenteAmount) newStatus = 'payé';
     else if (updatedMontantPaye > 0) newStatus = 'paiement_partiel';
     else newStatus = 'en_attente';
