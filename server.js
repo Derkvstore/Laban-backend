@@ -44,7 +44,6 @@ app.use(cors(corsOptions));
 // Affiche un message de connexion à la base de données
 pool.query('SELECT NOW()', (err, result) => {
   if (err) {
-    // Affiche une erreur si la connexion échoue
     return console.error('Erreur de connexion à la base de données', err.stack);
   }
   console.log('✅ Connexion à la base de données réussie :', result.rows[0].now);
@@ -85,9 +84,12 @@ app.use('/api/benefices', beneficesRoutes);
 // Utilise les routes pour les dettes
 app.use('/api/dettes', dettesRoutes);
 
-// Utilise les routes pour les retours défectueux.
-// J'ai corrigé le chemin en /api/returns pour correspondre à la route définie dans le fichier de routes.
+// Utilise la route “officielle” pour les retours défectueux
 app.use('/api/returns', defectiveReturnsRoutes);
+
+// ✅ Alias rétro-compatibilité pour éviter les 404
+app.use('/api/defective-returns', defectiveReturnsRoutes);
+app.use('/api/defective_returns', defectiveReturnsRoutes);
 
 // Utilise les routes pour les rapports
 app.use('/api/rapports', rapportsRoutes);
@@ -100,7 +102,6 @@ app.use('/api/references_produits', referencesProduitsRoutes);
 
 // Utilise les routes pour les retours fournisseur
 app.use('/api/retours-fournisseurs', retoursFournisseursRoutes);
-
 
 // Démarre le serveur
 const PORT = process.env.PORT || 3000;
