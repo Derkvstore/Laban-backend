@@ -48,7 +48,8 @@ const gabaritHTMLFacture = ({ facture, client, vente, items }) => {
 <body><div class="container">
   <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:24px;">
     <div><h2 style="margin:0;font-size:22px;">Wassolo Service</h2>
-      <div class="muted" style="font-size:13px;">Adresse – Téléphone</div></div>
+      <div class="muted" style="font-size:13px;">Adresse: Halle de Bamako</div></div>
+      <div class="muted" style="font-size:13px;">Télephone: +223 77 39 90 05</div></div>
     <div style="text-align:right;">
       <div class="badge">Facture</div>
       <div style="margin-top:8px;font-weight:600;">${facture.numero_facture}</div>
