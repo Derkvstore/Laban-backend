@@ -48,8 +48,7 @@ const gabaritHTMLFacture = ({ facture, client, vente, items }) => {
 <body><div class="container">
   <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:24px;">
     <div><h2 style="margin:0;font-size:22px;">Wassolo Service</h2>
-      <div class="muted" style="font-size:13px;">Adresse: Halle de Bamako</div></div>
-      <div class="muted" style="font-size:13px;">Télephone: +223 77 39 90 05</div></div>
+      <div class="muted" style="font-size:13px;">Adresse – Téléphone</div></div>
     <div style="text-align:right;">
       <div class="badge">Facture</div>
       <div style="margin-top:8px;font-weight:600;">${facture.numero_facture}</div>
@@ -198,7 +197,10 @@ exports.obtenirFacture = async (req, res) => {
     const cli = await pool.query('SELECT * FROM clients WHERE id = $1', [vente.client_id]);
     const client = cli.rows[0];
 
-    const items = await pool.query('SELECT * FROM vente_items WHERE vente_id = $1 ORDER BY id', [vente.id]);
+    const items = await pool.query(
+      `SELECT * FROM vente_items WHERE vente_id = $1 AND statut_vente_item NOT IN ('annulé', 'retourné') ORDER BY id`,
+      [vente.id]
+    );
 
     res.json({ facture, vente, client, items: items.rows });
   } catch (e) {
@@ -371,7 +373,10 @@ exports.genererPDF = async (req, res) => {
     const cli = await pool.query('SELECT * FROM clients WHERE id = $1', [vente.client_id]);
     const client = cli.rows[0];
 
-    const items = await pool.query('SELECT * FROM vente_items WHERE vente_id = $1 ORDER BY id', [vente.id]);
+    const items = await pool.query(
+      `SELECT * FROM vente_items WHERE vente_id = $1 AND statut_vente_item NOT IN ('annulé', 'retourné') ORDER BY id`,
+      [vente.id]
+    );
 
     const html = gabaritHTMLFacture({ facture, client, vente, items: items.rows });
 
