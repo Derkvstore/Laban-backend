@@ -29,6 +29,7 @@ exports.getAllDefectiveReturns = async (req, res) => {
       ) vi ON TRUE
       LEFT JOIN ventes v  ON v.id = vi.vente_id
       LEFT JOIN clients c ON c.id = v.client_id
+      WHERE dr.status IS NULL OR dr.status = 'en_attente'
       ORDER BY dr.return_date DESC
     `);
 
