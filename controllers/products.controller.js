@@ -1,4 +1,3 @@
-// Importe le pool de connexion à la base de données
 const pool = require('../db');
 
 // Contrôleur pour la création d'un nouveau produit
@@ -10,12 +9,62 @@ exports.createProduct = async (req, res) => {
       'INSERT INTO products (marque, modele, stockage, type, quantite_en_stock, prix_achat, prix_vente_suggere, fournisseur_id, type_carton) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *',
       [marque, modele, stockage, type, quantite_en_stock, prix_achat, prix_vente_suggere, fournisseur_id, type_carton]
     );
+
+    await pool.query(
+      `INSERT INTO stock_movements (product_id, movement_type, quantity_moved, reason, related_entity_id, related_entity_type)
+       VALUES ($1, 'entree', $2, 'ajout', NULL, 'produit_cree')`,
+      [newProduct.rows[0].id, quantite_en_stock]
+    );
+
     res.status(201).json(newProduct.rows[0]);
   } catch (error) {
     console.error('Erreur lors de la création d\'un produit:', error);
     res.status(500).json({ message: 'Erreur serveur interne' });
   }
 };
+
+// Contrôleur pour ajouter une quantité à un produit existant
+exports.addProductQuantity = async (req, res) => {
+    const { id } = req.params;
+    const { quantite_ajoutee, fournisseur_id } = req.body;
+
+    if (!quantite_ajoutee || quantite_ajoutee <= 0) {
+        return res.status(400).json({ message: 'Quantité à ajouter invalide.' });
+    }
+
+    try {
+        await pool.query('BEGIN');
+        
+        const existingProduct = await pool.query('SELECT * FROM products WHERE id = $1 FOR UPDATE', [id]);
+        if (existingProduct.rows.length === 0) {
+            await pool.query('ROLLBACK');
+            return res.status(404).json({ message: 'Produit non trouvé.' });
+        }
+
+        const currentProduct = existingProduct.rows[0];
+        const newStock = currentProduct.quantite_en_stock + quantite_ajoutee;
+
+        await pool.query(
+            'UPDATE products SET quantite_en_stock = $1 WHERE id = $2 RETURNING *',
+            [newStock, id]
+        );
+
+        await pool.query(
+            `INSERT INTO stock_movements (product_id, movement_type, quantity_moved, reason, related_entity_id, related_entity_type, supplier_id)
+             VALUES ($1, 'entree', $2, 'reapprovisionnement', NULL, 'produit_ajoute', $3)`,
+            [id, quantite_ajoutee, fournisseur_id]
+        );
+
+        await pool.query('COMMIT');
+        res.status(200).json({ message: 'Quantité ajoutée avec succès.' });
+
+    } catch (error) {
+        await pool.query('ROLLBACK');
+        console.error('Erreur lors de l\'ajout de la quantité au produit:', error);
+        res.status(500).json({ message: 'Erreur serveur interne.' });
+    }
+};
+
 
 // Contrôleur pour récupérer tous les produits
 exports.getAllProducts = async (req, res) => {
