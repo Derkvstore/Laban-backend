@@ -137,7 +137,13 @@ exports.getDashboardTotals = async (req, res) => {
       WHERE type = 'ACCESSOIRE' AND quantite_en_stock > 0
     `);
 
-    const retoursResult = await pool.query(`SELECT SUM(quantite_retournee) as total_retours FROM defective_returns`);
+    // ✅ Modification : Ne compte que les retours en attente d'envoi
+    const retoursResult = await pool.query(`
+      SELECT SUM(quantite_retournee) as total_retours
+      FROM defective_returns
+      WHERE status IS NULL OR status = 'en_attente'
+    `);
+
     const mobilesVendusResult = await pool.query(`
       SELECT SUM(quantite_vendue) as total_vendus
       FROM vente_items
